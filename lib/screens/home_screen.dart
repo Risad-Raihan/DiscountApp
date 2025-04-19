@@ -1,24 +1,82 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import '../models/discount_provider.dart';
-import '../styles/colors.dart';
+import '../models/category.dart';
+import '../models/store.dart';
+import '../models/discount.dart';
+import '../services/contentful_service.dart';
+import '../utils/app_colors.dart';
 import '../services/auth_service.dart';
+import 'location_search_screen.dart';
+import 'category_search_screen.dart';
+import 'discount_detail_screen.dart';
+import 'store_detail_screen.dart';
+import 'category_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  _HomeScreenState createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final ContentfulService _contentfulService = ContentfulService();
+  
+  List<Category> _categories = [];
+  List<Store> _featuredStores = [];
+  List<Discount> _featuredDiscounts = [];
+  
+  bool _isLoading = true;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    // Load mock data when the app starts
-    Future.microtask(() {
-      Provider.of<DiscountProvider>(context, listen: false).loadMockData();
+    _fetchData();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
     });
+
+    try {
+      // Fetch categories, featured stores, and featured discounts
+      final categories = await _contentfulService.getCategories();
+      final stores = await _contentfulService.getStores();
+      final featuredStores = stores.where((store) => store.featured).toList();
+      final discounts = await _contentfulService.getDiscounts();
+      final featuredDiscounts = discounts.where((discount) => discount.featured).toList();
+
+      setState(() {
+        _categories = categories;
+        _featuredStores = featuredStores;
+        _featuredDiscounts = featuredDiscounts;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to load data: $e';
+        _isLoading = false;
+      });
+      print('Error fetching data: $e');
+    }
+  }
+
+  void _navigateToLocationSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LocationSearchScreen()),
+    );
+  }
+
+  void _navigateToCategorySearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const CategorySearchScreen()),
+    );
   }
 
   @override
@@ -26,191 +84,273 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Welcome to Discount Hub',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primaryColor,
-          ),
+          'Discount Hub',
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
         ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        elevation: 2,
-        shadowColor: Colors.black.withOpacity(0.1),
+        elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () {
+              // Navigate to notifications
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             color: AppColors.primaryColor,
             onPressed: () async {
-              // Sign out
-              await Provider.of<AuthService>(context, listen: false).signOut();
+              // Sign out using the context provider
+              final authService = Provider.of<AuthService>(context, listen: false);
+              await authService.signOut();
             },
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Action for adding or scanning a new discount
+        },
+        child: const Icon(Icons.add),
+        tooltip: 'Add Discount',
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : RefreshIndicator(
+                  onRefresh: _fetchData,
+                  color: AppColors.primaryColor,
+                  backgroundColor: AppColors.cardColor,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Welcome Header
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Welcome back!',
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  color: AppColors.primaryLightColor,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Discover amazing discounts today',
+                                style: Theme.of(context).textTheme.bodyMedium,
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Search Cards - Two big tiles taking half the screen
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 1.4,
+                          children: [
+                            // Search by Location Card
+                            _buildSearchCard(
+                              icon: Icons.location_on,
+                              title: 'Search by Location',
+                              subtitle: 'Find deals near you',
+                              onTap: _navigateToLocationSearch,
+                              color: AppColors.accentPurple,
+                            ),
+                            
+                            // Search by Category Card
+                            _buildSearchCard(
+                              icon: Icons.category,
+                              title: 'Search by Category',
+                              subtitle: 'Browse deals by type',
+                              onTap: _navigateToCategorySearch,
+                              color: AppColors.secondaryColor,
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 20),
+                        
+                        // Featured Stores Section
+                        if (_featuredStores.isNotEmpty) ...[
+                          _buildSectionHeader('Featured Stores'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 160,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _featuredStores.length,
+                              itemBuilder: (context, index) {
+                                return _buildStoreCard(_featuredStores[index]);
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                        
+                        // Featured Discounts Section
+                        if (_featuredDiscounts.isNotEmpty) ...[
+                          _buildSectionHeader('Featured Discounts'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 240,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _featuredDiscounts.length,
+                              itemBuilder: (context, index) {
+                                return _buildDiscountCard(_featuredDiscounts[index]);
+                              },
+                            ),
+                          ),
+                        ] else ...[
+                          const Center(
+                            child: Text(
+                              'No featured discounts available',
+                              style: TextStyle(fontSize: 14, color: Colors.grey),
+                            ),
+                          ),
+                        ],
+                        
+                        const SizedBox(height: 20),
+                        
+                        // Categories Section
+                        _buildSectionHeader('Categories'),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 95,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _categories.length,
+                            itemBuilder: (context, index) {
+                              return _buildCategoryItem(_categories[index]);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
             children: [
-              // Search Cards
-              GridView.count(
-                crossAxisCount: MediaQuery.of(context).size.width > 600 ? 2 : 1,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                childAspectRatio: 3.5,
-                children: [
-                  // Search by Location Card
-                  _buildSearchCard(
-                    icon: Icons.location_on,
-                    title: 'Search by Location',
-                    subtitle: 'Find deals near you',
-                    onTap: () {
-                      // Navigate to location search
-                    },
-                  ),
-                  
-                  // Search by Category Card
-                  _buildSearchCard(
-                    icon: Icons.grid_view,
-                    title: 'Search by Category',
-                    subtitle: 'Browse deals by type',
-                    onTap: () {
-                      // Navigate to category search
-                    },
-                  ),
-                ],
-              ),
-              
-              // New Discounts Section
-              const SizedBox(height: 24),
-              _buildSectionHeader(
-                title: 'New Discounts',
-                onViewAll: () {
-                  // Navigate to all discounts
-                },
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 220,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: 4,
-                  itemBuilder: (context, index) {
-                    return _buildDiscountCard(
-                      imageUrl: 'https://via.placeholder.com/250x128',
-                      discountPercent: '50% OFF',
-                      name: 'Restaurant Name',
-                      rating: '4.8',
-                      description: 'Enjoy delicious meals with our special discount',
-                      daysLeft: '3 days',
-                      category: 'Food',
-                      onTap: () {
-                        // Navigate to discount details
-                      },
-                    );
-                  },
+              Container(
+                width: 4,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryColor,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              
-              // Hot Shops Section
-              const SizedBox(height: 24),
-              _buildSectionHeader(
-                title: 'Hot Shops',
-                onViewAll: () {
-                  // Navigate to all shops
-                },
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 180,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: 4,
-                  itemBuilder: (context, index) {
-                    return _buildShopCard(
-                      name: 'Shop Name',
-                      description: 'Up to 70% off on selected items',
-                      category: 'Fashion',
-                      onTap: () {
-                        // Navigate to shop details
-                      },
-                    );
-                  },
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
                 ),
               ),
             ],
           ),
-        ),
+          TextButton.icon(
+            onPressed: () {
+              // Navigate to view all
+            },
+            icon: const Icon(
+              Icons.arrow_forward,
+              size: 16,
+            ),
+            label: const Text('View All'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primaryColor,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
-  
-  // Search Card Widget
+
   Widget _buildSearchCard({
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    required Color color,
   }) {
     return Card(
-      elevation: 4,
-      shadowColor: AppColors.primaryColor.withOpacity(0.1),
+      elevation: 6,
+      shadowColor: color.withOpacity(0.3),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.cardColor,
+                color.withOpacity(0.2),
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 14.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                width: 48,
-                height: 48,
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryLightColor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(24),
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   icon,
-                  color: AppColors.primaryColor,
-                  size: 24,
+                  size: 28,
+                  color: color,
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              Icon(
-                Icons.chevron_right,
-                color: AppColors.primaryColor,
-                size: 20,
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondaryColor,
+                ),
               ),
             ],
           ),
@@ -218,101 +358,294 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
-  // Section Header Widget
-  Widget _buildSectionHeader({
-    required String title,
-    required VoidCallback onViewAll,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.primaryColor,
+
+  Widget _buildCategoryItem(Category category) {
+    return GestureDetector(
+      onTap: () {
+        // Navigate to category discounts
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CategoryDetailScreen(category: category),
           ),
-        ),
-        TextButton(
-          onPressed: onViewAll,
-          child: Text(
-            'View All',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.primaryColor,
+        );
+      },
+      child: Container(
+        width: 90,
+        margin: const EdgeInsets.only(right: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.primaryColor.withOpacity(0.7),
+                    AppColors.primaryLightColor.withOpacity(0.3),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(30),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primaryColor.withOpacity(0.2),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(
+                _getCategoryIcon(category.icon),
+                color: Colors.white,
+                size: 30,
+              ),
             ),
-          ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.lightSurface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                category.name,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
-  
-  // Discount Card Widget
-  Widget _buildDiscountCard({
-    required String imageUrl,
-    required String discountPercent,
-    required String name,
-    required String rating,
-    required String description,
-    required String daysLeft,
-    required String category,
-    required VoidCallback onTap,
-  }) {
+
+  Widget _buildDiscountCard(Discount discount) {
+    // Find the store for this discount
+    final store = _featuredStores.firstWhere(
+      (s) => s.id == discount.storeId,
+      orElse: () => Store(
+        id: '',
+        name: 'Unknown Store',
+        description: '',
+        categoryIds: [],
+        featured: false,
+      ),
+    );
+
+    // Find the category for this discount
+    final category = _categories.firstWhere(
+      (c) => c.id == discount.categoryId,
+      orElse: () => Category(
+        id: '',
+        name: 'General',
+        description: '',
+        icon: 'tag',
+      ),
+    );
+
     return Container(
       width: 250,
+      height: 235,
       margin: const EdgeInsets.only(right: 16),
       child: Card(
-        elevation: 4,
-        shadowColor: AppColors.primaryColor.withOpacity(0.1),
+        elevation: 6,
+        shadowColor: Colors.black.withOpacity(0.2),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
         ),
         child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            // Navigate to discount details
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DiscountDetailScreen(discount: discount),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(20),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Image and Discount Badge
               Stack(
                 children: [
+                  // Discount Image
                   ClipRRect(
                     borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
+                      topLeft: Radius.circular(20),
+                      topRight: Radius.circular(20),
                     ),
-                    child: Container(
-                      height: 128,
-                      width: double.infinity,
-                      color: AppColors.primaryLightColor.withOpacity(0.2),
-                      child: Icon(
-                        Icons.image,
-                        size: 48,
-                        color: AppColors.primaryColor.withOpacity(0.5),
-                      ),
-                    ),
+                    child: discount.imageUrl != null && discount.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: discount.imageUrl!.startsWith('http') 
+                                ? discount.imageUrl! 
+                                : 'https:${discount.imageUrl!}',
+                            height: 130,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              height: 130,
+                              width: double.infinity,
+                              color: AppColors.lightSurface,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.primaryLightColor,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              height: 130,
+                              width: double.infinity,
+                              color: AppColors.lightSurface,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.image_not_supported_rounded,
+                                    size: 36,
+                                    color: AppColors.primaryLightColor,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Image not available',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.textSecondaryColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : Container(
+                            height: 130,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  AppColors.primaryColor.withOpacity(0.7),
+                                  AppColors.secondaryColor.withOpacity(0.7),
+                                ],
+                              ),
+                            ),
+                            child: Center(
+                              child: Icon(
+                                Icons.percent_rounded,
+                                size: 50,
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ),
                   ),
+                  
+                  // Discount Badge
                   Positioned(
-                    top: 8,
-                    right: 8,
+                    top: 10,
+                    right: 10,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 8,
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
+                        color: AppColors.accentPink,
                         borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.2),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        discountPercent,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.local_offer,
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${discount.discountPercentage.toInt()}% OFF',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  // Store logo at bottom left of image
+                  Positioned(
+                    bottom: -16,
+                    left: 14,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: AppColors.cardColor,
+                          width: 2,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: store.logoUrl != null && store.logoUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: store.logoUrl!.startsWith('http')
+                                    ? store.logoUrl!
+                                    : 'https:${store.logoUrl!}',
+                                fit: BoxFit.cover,
+                                placeholder: (context, url) => Center(
+                                  child: Icon(
+                                    Icons.store,
+                                    size: 16,
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                                errorWidget: (context, url, error) => Center(
+                                  child: Icon(
+                                    Icons.store,
+                                    size: 16,
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Icon(
+                                  Icons.store,
+                                  size: 16,
+                                  color: AppColors.primaryColor,
+                                ),
+                              ),
                       ),
                     ),
                   ),
@@ -321,95 +654,108 @@ class _HomeScreenState extends State<HomeScreen> {
               
               // Content
               Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.fromLTRB(14, 20, 14, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Name and Rating
+                    // Title
+                    Text(
+                      discount.title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    
+                    // Store name
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        const SizedBox(width: 36), // Offset for logo
                         Expanded(
                           child: Text(
-                            name,
+                            store.name,
                             style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              color: AppColors.textSecondaryColor,
+                              fontWeight: FontWeight.w500,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.star,
-                              color: Colors.amber,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              rating,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    
-                    // Description
-                    Text(
-                      description,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     
                     // Days Left and Category
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.access_time,
-                              size: 12,
-                              color: Colors.grey[600],
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Ends in $daysLeft',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
+                        // Days left
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                            horizontal: 6,
+                            vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryLightColor.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(16),
+                            color: AppColors.secondaryColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text(
-                            category,
-                            style: TextStyle(
-                              color: AppColors.primaryColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 10,
+                                color: AppColors.secondaryColor,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${discount.daysLeft} days',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: AppColors.secondaryColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        
+                        // Category
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _getCategoryIcon(category.icon),
+                                size: 10,
+                                color: AppColors.primaryColor,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                category.name,
+                                style: TextStyle(
+                                  color: AppColors.primaryColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -423,88 +769,177 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
-  // Shop Card Widget
-  Widget _buildShopCard({
-    required String name,
-    required String description,
-    required String category,
-    required VoidCallback onTap,
-  }) {
+
+  Widget _buildStoreCard(Store store) {
+    // Get categories for this store
+    final storeCategories = _categories
+        .where((category) => store.categoryIds.contains(category.id))
+        .toList();
+    
+    // Use the first category for display or 'General' if none
+    final displayCategory = storeCategories.isNotEmpty
+        ? storeCategories.first
+        : Category(id: '', name: 'General', description: '', icon: 'store');
+
     return Container(
-      width: 200,
-      margin: const EdgeInsets.only(right: 16),
+      width: 160,
+      margin: const EdgeInsets.only(right: 12),
       child: Card(
         elevation: 4,
-        shadowColor: AppColors.primaryColor.withOpacity(0.1),
+        shadowColor: AppColors.primaryColor.withOpacity(0.2),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
+          onTap: () {
+            // Navigate to store details
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => StoreDetailScreen(store: store),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.cardColor,
+                  AppColors.lightSurface,
+                ],
+              ),
+            ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Icon
+                // Store Logo with background
                 Container(
-                  width: 64,
-                  height: 64,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.primaryLightColor.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(32),
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(21),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primaryColor.withOpacity(0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  child: Icon(
-                    Icons.percent,
-                    color: AppColors.primaryColor,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                
-                // Name
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 4),
-                
-                // Description
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  child: store.logoUrl != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(21),
+                          child: CachedNetworkImage(
+                            imageUrl: store.logoUrl!.startsWith('http')
+                                ? store.logoUrl!
+                                : 'https:${store.logoUrl!}',
+                            fit: BoxFit.cover,
+                            placeholder: (context, url) => Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLightColor.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(21),
+                              ),
+                              child: Icon(
+                                Icons.store,
+                                color: AppColors.primaryColor,
+                                size: 20,
+                              ),
+                            ),
+                            errorWidget: (context, url, error) => Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLightColor.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(21),
+                              ),
+                              child: Icon(
+                                Icons.error,
+                                color: AppColors.primaryColor,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryLightColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(21),
+                          ),
+                          child: Icon(
+                            Icons.store,
+                            color: AppColors.primaryColor,
+                            size: 20,
+                          ),
+                        ),
                 ),
                 const SizedBox(height: 8),
                 
-                // Category
+                // Store Name
+                Text(
+                  store.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                
+                // Store Description
+                Text(
+                  store.description,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textSecondaryColor,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                
+                // Category Badge
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
+                    horizontal: 5,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.primaryLightColor.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    category,
-                    style: TextStyle(
-                      color: AppColors.primaryColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: AppColors.primaryLightColor.withOpacity(0.2),
+                      width: 1,
                     ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getCategoryIcon(displayCategory.icon),
+                        size: 9,
+                        color: AppColors.primaryColor,
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        displayCategory.name,
+                        style: TextStyle(
+                          color: AppColors.primaryColor,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -513,5 +948,35 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  IconData _getCategoryIcon(String iconName) {
+    switch (iconName.toLowerCase()) {
+      case 'food':
+      case 'restaurant':
+      case 'food_dining':
+        return Icons.restaurant;
+      case 'shopping':
+      case 'fashion':
+      case 'shopping_bag':
+        return Icons.shopping_bag;
+      case 'electronics':
+      case 'devices':
+        return Icons.devices;
+      case 'travel':
+      case 'flight':
+        return Icons.flight;
+      case 'beauty':
+      case 'spa':
+        return Icons.spa;
+      case 'health':
+      case 'medical_services':
+        return Icons.medical_services;
+      case 'entertainment':
+      case 'movie':
+        return Icons.movie;
+      default:
+        return Icons.category;
+    }
   }
 } 

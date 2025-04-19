@@ -7,9 +7,11 @@ import 'screens/login_screen.dart';
 import 'styles/theme.dart';
 import 'models/discount_provider.dart';
 import 'services/auth_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -29,9 +31,9 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Discount App',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.lightTheme,
-        themeMode: ThemeMode.light,
+        theme: AppTheme.darkTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.dark,
         home: const AuthWrapper(),
         routes: {
           '/login': (context) => const LoginScreen(),
