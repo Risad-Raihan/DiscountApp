@@ -8,6 +8,12 @@ class Store {
   final String? website;
   final List<String> categoryIds;
   final bool featured;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+
+  // Add getter for logo (backward compatibility)
+  String? get logo => logoUrl;
 
   Store({
     required this.id,
@@ -17,6 +23,9 @@ class Store {
     this.website,
     required this.categoryIds,
     required this.featured,
+    this.latitude,
+    this.longitude,
+    this.address,
   });
 
   factory Store.fromContentful(Map<String, dynamic> entry) {
@@ -60,6 +69,25 @@ class Store {
         }
       }
     }
+    
+    // Parse location data
+    double? latitude;
+    double? longitude;
+    if (fields.containsKey('location') && fields['location'] != null) {
+      try {
+        final locationData = fields['location'];
+        if (locationData is Map) {
+          if (locationData.containsKey('lat')) {
+            latitude = double.tryParse(locationData['lat'].toString());
+          }
+          if (locationData.containsKey('lon')) {
+            longitude = double.tryParse(locationData['lon'].toString());
+          }
+        }
+      } catch (e) {
+        print('Error parsing location data: $e');
+      }
+    }
 
     return Store(
       id: entry['sys']['id'],
@@ -69,6 +97,18 @@ class Store {
       website: fields['website'] ?? '',
       categoryIds: extractedCategoryIds,
       featured: fields['featured'] ?? false,
+      latitude: latitude,
+      longitude: longitude,
+      address: fields['address'] as String?,
     );
+  }
+  
+  // Check if the store has valid location data
+  bool get hasLocation => latitude != null && longitude != null;
+  
+  // Calculate distance from user (will be implemented)
+  double distanceFrom(double userLat, double userLng) {
+    // We'll implement this later using geolocator
+    return 0.0;
   }
 } 

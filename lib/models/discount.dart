@@ -15,6 +15,7 @@ class Discount {
   final bool active;
   final bool isFavorite;
   final String? fullDescription;
+  final String? storeLogoUrl;
 
   // Add these getters for backward compatibility
   String get store => storeId;
@@ -34,6 +35,7 @@ class Discount {
     required this.active,
     this.isFavorite = false,
     this.fullDescription,
+    this.storeLogoUrl,
   });
 
   String get formattedExpiryDate {
@@ -44,8 +46,15 @@ class Discount {
     return expiryDate.difference(DateTime.now()).inDays;
   }
 
+  // isExpired is used as both a property and a method in the app
+  // Access this directly for both cases
   bool get isExpired {
     return DateTime.now().isAfter(expiryDate);
+  }
+
+  // Method to get days remaining
+  int daysRemaining() {
+    return daysLeft;
   }
 
   factory Discount.fromContentful(Map<String, dynamic> entry) {
@@ -126,6 +135,7 @@ class Discount {
       featured: fields['featured'] ?? false,
       active: fields['active'] ?? true,
       fullDescription: fullDescription,
+      storeLogoUrl: fields['storeLogoUrl'],
     );
   }
 
@@ -144,6 +154,7 @@ class Discount {
     bool? active,
     bool? isFavorite,
     String? fullDescription,
+    String? storeLogoUrl,
   }) {
     return Discount(
       id: id ?? this.id,
@@ -159,6 +170,7 @@ class Discount {
       active: active ?? this.active,
       isFavorite: isFavorite ?? this.isFavorite,
       fullDescription: fullDescription ?? this.fullDescription,
+      storeLogoUrl: storeLogoUrl ?? this.storeLogoUrl,
     );
   }
 
@@ -178,6 +190,7 @@ class Discount {
       'active': active,
       'isFavorite': isFavorite,
       'fullDescription': fullDescription,
+      'storeLogoUrl': storeLogoUrl,
     };
   }
 
@@ -197,6 +210,7 @@ class Discount {
       active: map['active'],
       isFavorite: map['isFavorite'] ?? false,
       fullDescription: map['fullDescription'],
+      storeLogoUrl: map['storeLogoUrl'],
     );
   }
 } 
