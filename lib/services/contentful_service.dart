@@ -14,48 +14,74 @@ class ContentfulService {
   final String baseUrl = 'https://cdn.contentful.com';
   final bool useMockData;
 
-  ContentfulService({
+  static final ContentfulService _instance = ContentfulService._internal(
+    spaceId: _getEnvOrEmpty('CONTENTFUL_SPACE_ID'),
+    accessToken: _getEnvOrEmpty('CONTENTFUL_ACCESS_TOKEN'),
+    environment: _getEnvOrEmpty('CONTENTFUL_ENVIRONMENT', defaultValue: 'master'),
+  );
+
+  factory ContentfulService({
     String? spaceId,
     String? accessToken,
     String? environment,
-  })  : spaceId = spaceId ?? _getEnvOrEmpty('CONTENTFUL_SPACE_ID'),
-        accessToken = accessToken ?? _getEnvOrEmpty('CONTENTFUL_ACCESS_TOKEN'),
-        environment = environment ?? _getEnvOrEmpty('CONTENTFUL_ENVIRONMENT', defaultValue: 'master'),
-        useMockData = _shouldUseMockData();
+  }) {
+    // If custom credentials are provided, create a new instance
+    if (spaceId != null || accessToken != null || environment != null) {
+      return ContentfulService._internal(
+        spaceId: spaceId ?? _getEnvOrEmpty('CONTENTFUL_SPACE_ID'),
+        accessToken: accessToken ?? _getEnvOrEmpty('CONTENTFUL_ACCESS_TOKEN'),
+        environment: environment ?? _getEnvOrEmpty('CONTENTFUL_ENVIRONMENT', defaultValue: 'master'),
+      );
+    }
+    // Otherwise use the singleton instance
+    return _instance;
+  }
+
+  ContentfulService._internal({
+    required this.spaceId,
+    required this.accessToken,
+    required this.environment,
+  }) : useMockData = _shouldUseMockData() {
+    
+    // Log actual values being used (masking the access token for security)
+    print('ContentfulService initialized with:');
+    print('- Space ID: ${this.spaceId.isNotEmpty ? this.spaceId : "NOT SET"}');
+    print('- Access Token: ${this.accessToken.isNotEmpty ? "***" : "NOT SET"}');
+    print('- Environment: ${this.environment}');
+    
+    if (this.spaceId.isEmpty || this.accessToken.isEmpty) {
+      print('WARNING: ContentfulService requires both spaceId and accessToken. Some functionality will be limited.');
+    }
+  }
 
   // Helper method to safely access environment variables
   static String _getEnvOrEmpty(String key, {String defaultValue = ''}) {
     try {
+      // Check if dotenv is available and initialized
       final value = dotenv.env[key];
       print('Loaded env variable $key: ${value != null ? "Success" : "Not found"}');
       return value ?? defaultValue;
     } catch (e) {
       print('Error accessing env variable $key: $e');
+      // If there's an error (like dotenv not being initialized),
+      // return the default value
       return defaultValue;
     }
   }
   
   // Determine if we should use mock data
   static bool _shouldUseMockData() {
-    try {
-      final spaceId = dotenv.env['CONTENTFUL_SPACE_ID'];
-      final accessToken = dotenv.env['CONTENTFUL_ACCESS_TOKEN'];
-      final shouldUseMock = spaceId == null || spaceId.isEmpty || 
-                     accessToken == null || accessToken.isEmpty ||
-                     spaceId == 'YOUR_SPACE_ID' || accessToken == 'YOUR_ACCESS_TOKEN';
-      
-      print('Using mock data: $shouldUseMock (Space ID: ${spaceId != null}, Access token: ${accessToken != null})');
-      return shouldUseMock;
-    } catch (e) {
-      print('Error checking env variables: $e');
-      return true;
-    }
+    return false;
   }
 
   Future<Map<String, dynamic>> _get(String endpoint, {Map<String, String>? queryParams}) async {
+    if (spaceId.isEmpty || accessToken.isEmpty) {
+      throw Exception("ContentfulService requires both spaceId and accessToken. Please check your environment variables or pass them directly.");
+    }
+    
     if (useMockData) {
-      print('Using mock data for endpoint: $endpoint');
-      return _getMockData(endpoint, queryParams);
+      // This should never happen now, but just in case
+      throw Exception("Mock data is disabled. Please set up Contentful credentials.");
     }
     
     final params = {
@@ -79,11 +105,11 @@ class ContentfulService {
         return json.decode(response.body);
       } else {
         print('API error: ${response.statusCode} ${response.body}');
-        return _getMockData(endpoint, queryParams);
+        throw Exception('Failed to fetch data from Contentful: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
       print('Network error: $e');
-      return _getMockData(endpoint, queryParams);
+      throw Exception('Network error while fetching from Contentful: $e');
     }
   }
   
@@ -111,15 +137,15 @@ class ContentfulService {
         {
           'sys': {'id': 'cat1'},
           'fields': {
-            'name': 'Food & Dining',
-            'description': 'Discounts for restaurants and food outlets',
+            'name': 'Restaurants',
+            'description': 'Discounts for restaurants and cafes',
             'featured': true,
           }
         },
         {
           'sys': {'id': 'cat2'},
           'fields': {
-            'name': 'Technology',
+            'name': 'Electronics',
             'description': 'Deals on tech gadgets and electronics',
             'featured': true,
           }
@@ -142,8 +168,8 @@ class ContentfulService {
         {
           'sys': {'id': 'store1'},
           'fields': {
-            'name': 'Tech Store',
-            'description': 'The best tech store for students',
+            'name': 'Digital World',
+            'description': 'The latest electronics and gadgets',
             'featured': true,
             'categories': [
               {'sys': {'id': 'cat2'}}
@@ -153,8 +179,8 @@ class ContentfulService {
         {
           'sys': {'id': 'store2'},
           'fields': {
-            'name': 'Campus Cafe',
-            'description': 'Affordable meals for students',
+            'name': 'Gourmet Kitchen',
+            'description': 'Delicious food at affordable prices',
             'featured': true,
             'categories': [
               {'sys': {'id': 'cat1'}}
@@ -164,8 +190,8 @@ class ContentfulService {
         {
           'sys': {'id': 'store3'},
           'fields': {
-            'name': 'Student Apparel',
-            'description': 'Clothing for the modern student',
+            'name': 'Style Avenue',
+            'description': 'Trendy fashion for everyone',
             'featured': true,
             'categories': [
               {'sys': {'id': 'cat3'}}
@@ -187,10 +213,10 @@ class ContentfulService {
         {
           'sys': {'id': 'disc1'},
           'fields': {
-            'title': '50% Off Laptops',
-            'description': 'Get a new laptop at half price',
-            'discountPercentage': 50,
-            'code': 'STUDENT50',
+            'title': 'Limited Time Offer',
+            'description': 'Special discount for app users',
+            'discountPercentage': 15,
+            'code': 'APP15',
             'store': {'sys': {'id': 'store1'}},
             'category': {'sys': {'id': 'cat2'}},
             'expiryDate': nextMonth.toIso8601String(),
@@ -201,10 +227,10 @@ class ContentfulService {
         {
           'sys': {'id': 'disc2'},
           'fields': {
-            'title': '25% Off Campus Meals',
-            'description': 'Discount on all meals',
-            'discountPercentage': 25,
-            'code': 'FOOD25',
+            'title': 'New User Special',
+            'description': 'Discount for new customers',
+            'discountPercentage': 10,
+            'code': 'NEWUSER10',
             'store': {'sys': {'id': 'store2'}},
             'category': {'sys': {'id': 'cat1'}},
             'expiryDate': nextWeek.toIso8601String(),
@@ -215,10 +241,10 @@ class ContentfulService {
         {
           'sys': {'id': 'disc3'},
           'fields': {
-            'title': '30% Off Hoodies',
-            'description': 'Stay warm with discounted hoodies',
-            'discountPercentage': 30,
-            'code': 'HOODIE30',
+            'title': 'Flash Sale',
+            'description': 'One day only special offer',
+            'discountPercentage': 20,
+            'code': 'FLASH20',
             'store': {'sys': {'id': 'store3'}},
             'category': {'sys': {'id': 'cat3'}},
             'expiryDate': tomorrow.toIso8601String(),
@@ -319,9 +345,9 @@ class ContentfulService {
       queryParams['fields.category.sys.id'] = categoryId;
     }
     
-    if (featured != null && featured) {
-      queryParams['fields.featured'] = 'true';
-    }
+    // We can't rely on Contentful's query for featured because of how the data might be stored
+    // We'll filter after retrieval instead
+    print('Fetching discounts from Contentful with params: $queryParams');
 
     final data = await _get('entries', queryParams: queryParams);
     
@@ -333,15 +359,21 @@ class ContentfulService {
         data['includes'] is Map && 
         data['includes'].containsKey('Asset')) {
       final assets = data['includes']['Asset'];
+      print('Found ${assets.length} asset includes');
       for (var asset in assets) {
         if (asset.containsKey('sys') && asset['sys'].containsKey('id')) {
           assetsMap[asset['sys']['id']] = asset;
         }
       }
+    } else {
+      print('No asset includes found in response. Includes keys: ${data.containsKey('includes') ? (data['includes'] is Map ? (data['includes'] as Map).keys.toList() : 'includes not a map') : 'no includes key'}');
     }
     
     if (data.containsKey('items')) {
-      for (var item in data['items']) {
+      final items = data['items'];
+      print('Processing ${items.length} discounts from Contentful');
+      
+      for (var item in items) {
         try {
           // Check if the discount has an image and process it
           if (item['fields'].containsKey('image') && 
@@ -351,18 +383,113 @@ class ContentfulService {
             if (assetsMap.containsKey(imageId)) {
               // Replace the image reference with the actual asset data
               item['fields']['image'] = assetsMap[imageId];
+              print('Processed image for discount: ${item['fields']['title']}');
+            } else {
+              print('Image asset not found for ID: $imageId');
             }
           }
           
-          discounts.add(Discount.fromContentful(item));
+          // Manually check the featured flag
+          final fields = item['fields'] as Map<String, dynamic>? ?? {};
+          final featuredValue = fields['featured'];
+          final title = fields['title'] ?? 'Unnamed';
+          
+          // Print raw data for debugging
+          print('Raw discount data for $title: featured = $featuredValue (${featuredValue.runtimeType})');
+          
+          final discount = Discount.fromContentful(item);
+          print('Successfully parsed discount: ${discount.title} (featured=${discount.featured})');
+          
+          // Only add if it matches the featured filter (if specified)
+          if (featured == null || discount.featured == featured) {
+            discounts.add(discount);
+          }
         } catch (e) {
           print('Error parsing discount: $e');
-          print('Discount data: ${item['fields']}');
+          if (item.containsKey('fields')) {
+            print('Discount data: ${item['fields']}');
+          } else {
+            print('No fields in item: $item');
+          }
         }
+      }
+    } else {
+      print('No items found in Contentful response. Keys: ${data.keys.toList()}');
+    }
+    
+    print('Returning ${discounts.length} discounts (featured filter: $featured)');
+    return discounts;
+  }
+  
+  // Get featured discounts specifically
+  Future<List<Discount>> getFeaturedDiscounts() async {
+    print('Getting featured discounts directly');
+    
+    // Try to fetch with the featured parameter directly
+    try {
+      // First try directly with a featured=true parameter
+      final queryParams = {
+        'content_type': 'discount',
+        'include': '2',
+        'fields.featured': 'true', // Try to filter on the server side
+      };
+      
+      print('Fetching directly with fields.featured=true');
+      final uri = Uri.https('cdn.contentful.com', 
+        '/spaces/$spaceId/environments/$environment/entries', 
+        {...queryParams, 'access_token': accessToken});
+      print('Fetching from URL: $uri');
+      
+      final response = await http.get(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        print('Direct featured query returned ${data.containsKey('items') ? data['items'].length : 0} items');
+        
+        final List<Discount> discounts = [];
+        if (data.containsKey('items') && data['items'].isNotEmpty) {
+          // Process the items
+          for (var item in data['items']) {
+            try {
+              final discount = Discount.fromContentful(item);
+              if (!discount.isExpired && discount.active) {
+                discounts.add(discount);
+              }
+            } catch (e) {
+              print('Error parsing featured discount: $e');
+            }
+          }
+        }
+        
+        if (discounts.isNotEmpty) {
+          print('Found ${discounts.length} featured discounts via direct query');
+          return discounts;
+        }
+      }
+    } catch (e) {
+      print('Error in direct featured query: $e');
+    }
+    
+    // Fallback to getting all discounts and filtering client-side
+    print('Falling back to get all discounts and filter for featured=true');
+    final discounts = await getDiscounts();
+    final featuredDiscounts = discounts.where((d) => d.featured && !d.isExpired && d.active).toList();
+    print('Found ${featuredDiscounts.length} featured discounts from ${discounts.length} total via fallback');
+    
+    // Print them for debugging
+    if (featuredDiscounts.isNotEmpty) {
+      print('Featured discounts:');
+      for (var d in featuredDiscounts) {
+        print('- ${d.title} (featured: ${d.featured}, expired: ${d.isExpired}, active: ${d.active})');
       }
     }
     
-    return discounts;
+    return featuredDiscounts;
   }
   
   // Get discounts from stores near a location

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/app_colors.dart';
+import 'dart:math' as math;
 
 /// A collection of decorative UI elements to enhance the app's visual appeal
 
@@ -17,7 +18,7 @@ class GradientBackground extends StatefulWidget {
       Color(0xFF282828),
       Color(0xFF222222),
     ],
-    this.duration = const Duration(seconds: 5),
+    this.duration = const Duration(seconds: 3),
   }) : super(key: key);
 
   @override
@@ -136,7 +137,7 @@ class _GlowingButtonState extends State<GlowingButton> with SingleTickerProvider
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.0, end: 5.0).animate(_controller);
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(_controller);
   }
 
   @override
@@ -221,46 +222,54 @@ class PlayfulCard extends StatefulWidget {
   State<PlayfulCard> createState() => _PlayfulCardState();
 }
 
-class _PlayfulCardState extends State<PlayfulCard> {
-  bool _isHovered = false;
+class _PlayfulCardState extends State<PlayfulCard> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat(reverse: true);
+    
+    _animation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            color: widget.backgroundColor,
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            boxShadow: [
-              BoxShadow(
-                color: _isHovered 
-                    ? AppColors.primaryColor.withOpacity(0.3)
-                    : Colors.black.withOpacity(0.2),
-                blurRadius: _isHovered ? 12 : 6,
-                spreadRadius: _isHovered ? 2 : 0,
-                offset: _isHovered ? const Offset(0, 5) : const Offset(0, 3),
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(
+            0,
+            2 * math.sin(_animation.value * math.pi),
+          ),
+          child: Transform.rotate(
+            angle: 0.02 * math.sin(_animation.value * math.pi),
+            child: Card(
+              elevation: 4 + (_animation.value * 4),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            ],
-            border: _isHovered 
-                ? Border.all(color: AppColors.primaryLightColor.withOpacity(0.3), width: 1.5)
-                : null,
+              child: widget.child,
+            ),
           ),
-          transform: _isHovered 
-              ? Matrix4.identity()..translate(0, -5)
-              : Matrix4.identity(),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            child: widget.child,
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -370,8 +379,9 @@ class _ShimmerLoadingState extends State<ShimmerLoading> with SingleTickerProvid
     _controller = AnimationController(
       duration: widget.duration,
       vsync: this,
-    )..repeat();
-    _animation = Tween<double>(begin: -2, end: 2).animate(_controller);
+    )..repeat(reverse: true);
+    
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(_controller);
   }
 
   @override
@@ -388,9 +398,11 @@ class _ShimmerLoadingState extends State<ShimmerLoading> with SingleTickerProvid
         return ShaderMask(
           blendMode: BlendMode.srcATop,
           shaderCallback: (bounds) {
+            final double mappedValue = _animation.value * 2.0 - 1.0;
+            
             return LinearGradient(
-              begin: Alignment(_animation.value - 1, 0),
-              end: Alignment(_animation.value, 0),
+              begin: Alignment(mappedValue - 1, 0),
+              end: Alignment(mappedValue + 1, 0),
               colors: [
                 widget.baseColor,
                 widget.highlightColor,

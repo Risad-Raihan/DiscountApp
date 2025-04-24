@@ -27,21 +27,36 @@ class _AnimatedLocationPinState extends State<AnimatedLocationPin>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
+    );
+    
+    if (widget.isActive) {
+      _controller.repeat(reverse: true);
+    }
 
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
       ),
     );
 
-    _bounceAnimation = Tween<double>(begin: 0.0, end: 6.0).animate(
+    _bounceAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
-        curve: const Interval(0.5, 1.0, curve: Curves.elasticOut),
+        curve: const Interval(0.5, 1.0, curve: Curves.easeOut),
       ),
     );
+  }
+
+  @override
+  void didUpdateWidget(AnimatedLocationPin oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    if (widget.isActive && !oldWidget.isActive) {
+      _controller.repeat(reverse: true);
+    } else if (!widget.isActive && oldWidget.isActive) {
+      _controller.stop();
+    }
   }
 
   @override
@@ -59,7 +74,7 @@ class _AnimatedLocationPinState extends State<AnimatedLocationPin>
           mainAxisSize: MainAxisSize.min,
           children: [
             Transform.translate(
-              offset: Offset(0, -_bounceAnimation.value),
+              offset: Offset(0, -_bounceAnimation.value * 4.0),
               child: Transform.scale(
                 scale: widget.isActive ? _pulseAnimation.value : 1.0,
                 child: Container(

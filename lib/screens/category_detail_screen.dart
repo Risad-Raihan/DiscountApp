@@ -54,7 +54,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     }
   }
 
-  IconData _getCategoryIcon(String iconName) {
+  IconData _getCategoryIcon(String? iconName) {
+    if (iconName == null || iconName.isEmpty) {
+      return Icons.category;
+    }
+    
     switch (iconName.toLowerCase()) {
       case 'food':
       case 'restaurant':

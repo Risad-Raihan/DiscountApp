@@ -59,6 +59,30 @@ class Discount {
 
   factory Discount.fromContentful(Map<String, dynamic> entry) {
     final fields = entry['fields'] as Map<String, dynamic>;
+    final id = entry['sys']?['id'] as String? ?? '';
+    
+    // Check for mock data by ID or titles
+    if (id == 'disc1' || id == 'disc2' || id == 'disc3') {
+      throw Exception('Refusing to create discount from mock data (mock ID detected)');
+    }
+    
+    final title = fields['title'] as String? ?? '';
+    if (title == 'Flash Sale' || title == 'New User Special' || title == 'Limited Time Offer') {
+      // These are known mock data titles
+      throw Exception('Refusing to create discount from suspected mock data (title: $title)');
+    }
+    
+    // Required fields - validate that they exist and have valid values
+    if (!fields.containsKey('title') || 
+        fields['title'] == null || 
+        fields['title'].toString().trim().isEmpty) {
+      throw Exception('Discount is missing a title');
+    }
+    
+    if (!fields.containsKey('description') || 
+        fields['description'] == null) {
+      throw Exception('Discount is missing a description');
+    }
     
     DateTime expiry = DateTime.now().add(const Duration(days: 30)); // Default expiry
     if (fields.containsKey('expiryDate') && fields['expiryDate'] != null) {
@@ -81,6 +105,10 @@ class Discount {
       }
     }
     
+    if (storeId.isEmpty) {
+      throw Exception('Discount must be associated with a store');
+    }
+    
     // Safely extract categoryId
     String categoryId = '';
     if (fields.containsKey('category') && fields['category'] != null) {
@@ -91,6 +119,10 @@ class Discount {
           categoryId = sys['id'];
         }
       }
+    }
+    
+    if (categoryId.isEmpty) {
+      throw Exception('Discount must be associated with a category');
     }
 
     // Safely extract the image URL
@@ -117,23 +149,70 @@ class Discount {
     if (fields.containsKey('fullDescription')) {
       fullDescription = fields['fullDescription'];
     }
+    
+    // Carefully extract the featured flag
+    bool isFeatured = false;
+    if (fields.containsKey('featured')) {
+      final featuredValue = fields['featured'];
+      print('Featured value raw: $featuredValue (${featuredValue.runtimeType})');
+      
+      if (featuredValue is bool) {
+        isFeatured = featuredValue;
+      } else if (featuredValue is String) {
+        isFeatured = featuredValue.toLowerCase() == 'true';
+      } else if (featuredValue is num) {
+        isFeatured = featuredValue != 0;
+      } else if (featuredValue is Map) {
+        // Handle cases where featured might be a reference
+        isFeatured = true; // If it exists as a reference, consider it true
+      }
+    }
+    
+    print('Final featured flag value: $isFeatured');
+    
+    // Extract active status
+    bool isActive = true;
+    if (fields.containsKey('active')) {
+      final activeValue = fields['active'];
+      if (activeValue is bool) {
+        isActive = activeValue;
+      } else if (activeValue is String) {
+        isActive = activeValue.toLowerCase() == 'true';
+      } else if (activeValue is num) {
+        isActive = activeValue != 0;
+      }
+    }
+    
+    // Extract discount percentage
+    double discountPercentage = 0.0;
+    if (fields.containsKey('discountPercentage') && fields['discountPercentage'] != null) {
+      if (fields['discountPercentage'] is int) {
+        discountPercentage = fields['discountPercentage'].toDouble();
+      } else if (fields['discountPercentage'] is double) {
+        discountPercentage = fields['discountPercentage'];
+      } else if (fields['discountPercentage'] is String) {
+        try {
+          discountPercentage = double.parse(fields['discountPercentage']);
+        } catch (e) {
+          print('Error parsing discount percentage: $e');
+        }
+      }
+    }
+    
+    print('Parsed discount ${fields['title']}: featured=$isFeatured, active=$isActive, storeId=$storeId, categoryId=$categoryId');
 
     return Discount(
       id: entry['sys']['id'],
-      title: fields['title'] ?? '',
-      description: fields['description'] ?? '',
-      discountPercentage: fields.containsKey('discountPercentage') 
-          ? (fields['discountPercentage'] is int 
-              ? fields['discountPercentage'].toDouble() 
-              : fields['discountPercentage'] ?? 0.0)
-          : 0.0,
+      title: fields['title'],
+      description: fields['description'],
+      discountPercentage: discountPercentage,
       code: fields['code'],
       storeId: storeId,
       categoryId: categoryId,
       expiryDate: expiry,
       imageUrl: imageUrl,
-      featured: fields['featured'] ?? false,
-      active: fields['active'] ?? true,
+      featured: isFeatured,
+      active: isActive,
       fullDescription: fullDescription,
       storeLogoUrl: fields['storeLogoUrl'],
     );

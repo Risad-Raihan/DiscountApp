@@ -1,48 +1,65 @@
 import 'package:flutter/foundation.dart';
-import '../models/category.dart';
+import '../models/category.dart' as app_model;
 import '../services/contentful_service.dart';
 
 class CategoryProvider with ChangeNotifier {
   final ContentfulService _contentfulService = ContentfulService();
-  List<Category> _categories = [];
+  List<app_model.Category> _categories = [];
   bool _isLoading = false;
   String? _error;
 
   CategoryProvider() {
-    loadCategories();
+    _loadCategories();
   }
 
-  List<Category> get categories => _categories;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  List<app_model.Category> get categories {
+    return [..._categories];
+  }
 
-  Future<void> loadCategories() async {
+  bool get isLoading {
+    return _isLoading;
+  }
+
+  String? get error {
+    return _error;
+  }
+
+  Future<void> _loadCategories() async {
     _isLoading = true;
-    _error = null;
     notifyListeners();
 
     try {
       _categories = await _contentfulService.getCategories();
-      _isLoading = false;
-      notifyListeners();
+      _error = null;
     } catch (e) {
+      _error = e.toString();
+    } finally {
       _isLoading = false;
-      _error = 'Failed to load categories: $e';
       notifyListeners();
     }
   }
 
-  Category? getCategoryById(String id) {
+  app_model.Category getCategoryById(String id) {
     try {
       return _categories.firstWhere((category) => category.id == id);
     } catch (e) {
-      return null;
+      // Return a default category if the requested one is not found
+      print('Category with ID $id not found: $e');
+      return app_model.Category(
+        id: 'default',
+        name: 'General',
+        description: 'Default category',
+      );
     }
+  }
+
+  Future<void> refreshCategories() {
+    return _loadCategories();
   }
 
   Future<List<String>> getCategoryNames(List<String> categoryIds) async {
     if (_categories.isEmpty) {
-      await loadCategories();
+      await _loadCategories();
     }
 
     List<String> categoryNames = [];

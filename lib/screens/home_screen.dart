@@ -65,6 +65,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
+    
+    // Force fetch data from Contentful every time the app starts
     _fetchData();
   }
   
@@ -149,13 +151,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       
       List<Category> categories = [];
       List<Store> stores = [];
-      List<Discount> discounts = [];
+      List<Discount> featuredDiscounts = [];
       
       try {
         categories = await contentfulService.getCategories();
+        print('Found ${categories.length} categories from Contentful');
       } catch (e) {
         print('Error fetching categories: $e');
-        // Continue with empty categories
+        // Continue execution even if categories fail
+        categories = [];
       }
       
       try {
@@ -163,40 +167,48 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         final allStores = await contentfulService.getStores();
         // Filter to get only featured stores
         stores = allStores.where((store) => store.featured).toList();
+        print('Found ${stores.length} featured stores from ${allStores.length} total stores');
       } catch (e) {
         print('Error fetching stores: $e');
-        // Continue with empty stores
+        // Continue execution even if stores fail
+        stores = [];
       }
       
       try {
-        // Get discounts, prioritizing featured ones
-        discounts = await contentfulService.getDiscounts();
-        // Sort by expiry date and filter to active ones
-        discounts = discounts
-          .where((discount) => !discount.isExpired && discount.active)
-          .toList();
-        discounts.sort((a, b) => b.discountPercentage.compareTo(a.discountPercentage));
+        // Try to get featured discounts directly
+        print('Attempting to fetch featured discounts from Contentful');
+        featuredDiscounts = await contentfulService.getFeaturedDiscounts();
+        print('Fetched ${featuredDiscounts.length} featured discounts directly');
+        
+        // Filter out any discounts that match mock data patterns
+        final originalCount = featuredDiscounts.length;
+        featuredDiscounts = featuredDiscounts.where((d) => 
+          !['Flash Sale', 'New User Special', 'Limited Time Offer'].contains(d.title)
+        ).toList();
+        
+        if (originalCount != featuredDiscounts.length) {
+          print('Filtered out ${originalCount - featuredDiscounts.length} suspected mock discounts');
+        }
+        
+        // Sort by expiry date
+        if (featuredDiscounts.isNotEmpty) {
+          featuredDiscounts.sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
+        }
+        
+        print('Final featured discounts: ${featuredDiscounts.length}');
+        if (featuredDiscounts.isNotEmpty) {
+          print('Featured discount titles: ${featuredDiscounts.map((d) => '${d.title}').join(', ')}');
+        }
       } catch (e) {
-        print('Error fetching discounts: $e');
-        // Continue with empty discounts
-      }
-      
-      // Get the best discounts - featured ones first, then highest percentage
-      final featuredDiscounts = discounts.where((discount) => discount.featured).take(3).toList();
-      
-      // If we have fewer than 3 featured discounts, add the highest percentage ones
-      if (featuredDiscounts.length < 3) {
-        final nonFeaturedDiscounts = discounts
-          .where((discount) => !discount.featured)
-          .take(3 - featuredDiscounts.length)
-          .toList();
-        featuredDiscounts.addAll(nonFeaturedDiscounts);
+        print('Error processing discounts: $e');
+        // Continue execution even if discounts fail
+        featuredDiscounts = [];
       }
       
       return DataResult(
         categories: categories,
-        featuredStores: stores, // Use all featured stores from the API
-        featuredDiscounts: featuredDiscounts.take(3).toList(), // Take at most 3 discounts
+        featuredStores: stores,
+        featuredDiscounts: featuredDiscounts,
       );
     } catch (e) {
       print('Critical error in background fetch: $e');
@@ -216,6 +228,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       context,
       MaterialPageRoute(builder: (context) => const CategorySearchScreen()),
     );
+  }
+  
+  void _navigateToDiscountDetail(Discount discount) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DiscountDetailScreen(
+          discount: discount,
+        ),
+      ),
+    );
+  }
+  
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return 'Good morning';
+    } else if (hour < 17) {
+      return 'Good afternoon';
+    } else {
+      return 'Good evening';
+    }
   }
 
   @override
@@ -242,7 +276,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         // Welcome Header with animation
                         _buildWelcomeHeader(),
                         
-                        // Search Cards - Two big tiles taking half the screen
+                        // Search Cards - Two big tiles for location and category search
                         _buildSearchCardsSection(),
                         
                         const SizedBox(height: 20),
@@ -250,7 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         // Featured Stores Section
                         _buildFeaturedStoresSection(),
                         
-                        // Featured Discounts Section
+                        // Featured Discounts Section (only shows data from Contentful)
                         _buildFeaturedDiscountsSection(),
                         
                         // Categories Section
@@ -266,15 +300,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Action for adding or scanning a new discount
+          // TODO: Implement add discount functionality
         },
         backgroundColor: AppColors.accentMagenta,
         child: const Icon(Icons.add),
         tooltip: 'Add Discount',
-      ).animate().scale(
-        delay: 300.ms, 
-        duration: 600.ms,
-        curve: Curves.elasticOut
       ),
     );
   }
@@ -300,10 +330,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            LottieAnimation(
-              animationType: 'discount',
-              size: 30,
+            Icon(
+              Icons.local_offer,
               color: Colors.white,
+              size: 24,
             ),
             const SizedBox(width: 10),
             const Text(
@@ -382,31 +412,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
   
   Widget _buildWelcomeHeader() {
+    final user = Provider.of<AuthService>(context).currentUser;
+    final greeting = _getGreeting();
+    
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Welcome back!',
+            '$greeting, ${user?.displayName?.split(' ').first ?? 'User'}',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: AppColors.accentTeal,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
-            'Discover amazing discounts today',
+            'Discover the best deals from your favorite stores',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: AppColors.textSecondaryColor,
             ),
           ),
         ],
       ),
-    )
-    .animate(controller: _controller)
-    .slideY(begin: -0.2, duration: 500.ms, curve: Curves.easeOutQuad)
-    .fadeIn(duration: 500.ms);
+    ).animate(controller: _controller)
+      .fadeIn(duration: 300.ms);
   }
   
   Widget _buildSearchCardsSection() {
@@ -435,45 +465,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           delay: 200,
           isLarge: true,
         ),
-        
-        const SizedBox(height: 12),
-        
-        // Other search options in grid
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
-          children: [
-            // Featured Offers Card
-            _buildSearchCard(
-              animationType: 'discount',
-              title: 'Featured Offers',
-              subtitle: 'Top deals this week',
-              onTap: () {
-                // Navigate to featured offers or do something else
-              },
-              color: AppColors.accentPurple,
-              delay: 300,
-              isLarge: false,
-            ),
-            
-            // Another card option
-            _buildSearchCard(
-              animationType: 'fire',
-              title: 'Hot Deals',
-              subtitle: 'Limited time offers',
-              onTap: () {
-                // Navigate to hot deals
-              },
-              color: AppColors.accentMagenta,
-              delay: 400,
-              isLarge: false,
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -487,11 +478,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     required int delay,
     required bool isLarge,
   }) {
-    final bool isLocationCard = animationType == 'location';
-    final bool isCategoryCard = animationType == 'search';
-    final bool isDiscountCard = animationType == 'discount';
-    final bool isFireCard = animationType == 'fire';
-    
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(
@@ -502,198 +488,141 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         borderRadius: BorderRadius.circular(16),
         splashColor: color.withOpacity(0.1),
         highlightColor: color.withOpacity(0.05),
-        child: Stack(
-          children: [
-            // Background animation for location card
-            if (isLocationCard)
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Lottie.asset(
-                    'assets/animations/location_pin.json',
-                    fit: BoxFit.contain,
-                    alignment: isLarge ? Alignment.centerRight : Alignment.center,
-                    delegates: LottieDelegates(
-                      values: [
-                        ValueDelegate.color(
-                          ['**'],
-                          value: AppColors.accentTeal.withOpacity(0.15),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            
-            // Background animation for category card
-            if (isCategoryCard)
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Lottie.asset(
-                    'assets/animations/search.json',
-                    fit: BoxFit.contain,
-                    alignment: isLarge ? Alignment.centerRight : Alignment.bottomRight,
-                    delegates: LottieDelegates(
-                      values: [
-                        ValueDelegate.color(
-                          ['**'],
-                          value: AppColors.accentOrange.withOpacity(0.15),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              
-            // Background animation for discount card
-            if (isDiscountCard)
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Lottie.asset(
-                    'assets/animations/discount_tag.json',
-                    fit: BoxFit.contain,
-                    alignment: Alignment.bottomRight,
-                    delegates: LottieDelegates(
-                      values: [
-                        ValueDelegate.color(
-                          ['**'],
-                          value: AppColors.accentPurple.withOpacity(0.15),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              
-            // Background animation for fire/hot deals card
-            if (isFireCard)
-              Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Lottie.asset(
-                    'assets/animations/fire.json',
-                    fit: BoxFit.contain,
-                    alignment: Alignment.bottomRight,
-                    delegates: LottieDelegates(
-                      values: [
-                        ValueDelegate.color(
-                          ['**'],
-                          value: AppColors.accentMagenta.withOpacity(0.15),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            
-            // Card content with a semi-transparent background to ensure text readability
-            Container(
-              height: isLarge ? 150 : null,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.cardColor.withOpacity(0.95),
-                    AppColors.cardColor.withOpacity(0.85),
-                    color.withOpacity(0.15),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              padding: EdgeInsets.all(isLarge ? 24 : 16),
-              child: isLarge
-                  ? Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                title,
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: color,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                subtitle,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                              const SizedBox(height: 16),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: color.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Text(
-                                  isLocationCard ? 'Find Nearby Stores' : 'Browse Categories',
-                                  style: TextStyle(
-                                    color: color,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
+        child: Container(
+          height: isLarge ? 130 : null,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [
+                AppColors.cardColor,
+                AppColors.cardColor,
+                color.withOpacity(0.1),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          padding: EdgeInsets.all(isLarge ? 16 : 12),
+          child: isLarge
+              ? Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                              fontSize: 18,
+                            ),
                           ),
-                        ),
-                        const Spacer(),
-                        // Explicit animation on the side
-                        SizedBox(
-                          width: 90,
-                          height: 90,
-                          child: LottieAnimation(
-                            animationType: animationType,
-                            size: 90,
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: color.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              animationType == 'location' ? 'Find Nearby Stores' : 'Browse Categories',
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Simple icon instead of animation
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _getIconForType(animationType),
+                        size: 30,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Static icon instead of animation
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _getIconForType(animationType),
+                        size: 20,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Text content
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
                             color: color,
                           ),
                         ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Animated icon - it's still visible above the background animation
-                        LottieAnimation(
-                          animationType: animationType,
-                          size: 40,
-                          color: color,
-                        ),
-                        // Text content
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: color,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
-            ),
-          ],
+                  ],
+                ),
         ),
       ),
-    )
-    .animate(controller: _controller)
-    .slideY(begin: 0.2, end: 0, delay: Duration(milliseconds: delay), duration: 500.ms)
-    .fadeIn(delay: Duration(milliseconds: delay), duration: 400.ms);
+    ).animate(controller: _controller)
+      .fadeIn(delay: Duration(milliseconds: delay), duration: 300.ms);
+  }
+  
+  IconData _getIconForType(String type) {
+    switch (type) {
+      case 'location':
+        return Icons.location_on;
+      case 'search':
+        return Icons.search;
+      case 'discount':
+        return Icons.local_offer;
+      case 'fire':
+        return Icons.local_fire_department;
+      default:
+        return Icons.info;
+    }
   }
   
   Widget _buildFeaturedStoresSection() {
@@ -808,7 +737,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       size: 30,
                     ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             // Store name
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -818,7 +747,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
-                maxLines: 2,
+                maxLines: 1,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -827,84 +756,61 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
     ).animate(controller: _controller)
-      .slideX(
-        begin: 0.2, 
-        end: 0, 
-        delay: Duration(milliseconds: 400 + (index * 100)), 
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutQuad,
-      )
       .fadeIn(
-        delay: Duration(milliseconds: 400 + (index * 100)), 
-        duration: const Duration(milliseconds: 400),
+        delay: Duration(milliseconds: 400 + (index * 50)), 
+        duration: const Duration(milliseconds: 300),
       );
   }
 
   Widget _buildFeaturedDiscountsSection() {
+    // Don't show the section at all if there are no real discounts
+    if (_featuredDiscounts.isEmpty) {
+      return Container(); // Return empty container to hide the section
+    }
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'Hot Deals',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: AppColors.textPrimaryColor,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ).animate().fadeIn(delay: 300.ms).moveX(begin: -20),
-            TextButton(
-              onPressed: () {
-                // Navigate to all discounts view
-              },
-              child: Text(
-                'See All',
-                style: TextStyle(color: AppColors.accentTeal),
-              ),
-            ).animate().fadeIn(delay: 400.ms),
+            _buildSectionHeader(
+              title: 'Featured Discounts',
+              icon: Icons.local_offer,
+              color: AppColors.accentMagenta,
+              delay: 300,
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _fetchData,
+              tooltip: 'Refresh discounts',
+              iconSize: 20,
+              color: AppColors.accentTeal,
+            ),
           ],
         ),
         const SizedBox(height: 12),
         _isDiscountsLoading
-            ? _buildDiscountsShimmer()
-            : _featuredDiscounts.isEmpty
-                ? _buildEmptyDiscountsView()
-                : SizedBox(
-                    height: 210,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _featuredDiscounts.length,
-                      itemBuilder: (context, index) {
-                        final discount = _featuredDiscounts[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 12.0),
-                          child: SizedBox(
-                            width: 280,
-                            child: DiscountCard(
-                              discount: discount,
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => DiscountDetailScreen(
-                                      discount: discount,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ).animate().fadeIn(delay: (400 + index * 100).ms).moveX(begin: 20);
-                      },
+            ? _buildDiscountLoadingShimmer()
+            : Column(
+                children: List.generate(_featuredDiscounts.length, (index) {
+                  final discount = _featuredDiscounts[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: DiscountCard(
+                      key: ValueKey('discount_${discount.id}'),
+                      discount: discount,
+                      onTap: () => _navigateToDiscountDetail(discount),
+                      showAnimation: false,
                     ),
-                  ),
-        const SizedBox(height: 24),
+                  );
+                }),
+              ),
       ],
     );
   }
-  
-  Widget _buildDiscountsShimmer() {
+
+  Widget _buildDiscountLoadingShimmer() {
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -925,33 +831,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       },
     );
   }
-  
-  Widget _buildEmptyDiscountsView() {
-    return SizedBox(
-      height: 160,
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedLoading(
-              animationType: 'empty',
-              size: 80,
-              color: AppColors.textSecondaryColor,
-              repeat: true,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No discounts available',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondaryColor,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ).animate().fadeIn(duration: 500.ms);
-  }
-  
+
   Widget _buildCategoriesSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1046,6 +926,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(8),
@@ -1069,7 +950,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   fontWeight: FontWeight.w600,
                 ),
                 textAlign: TextAlign.center,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -1077,16 +958,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
       ),
     ).animate(controller: _controller)
-      .slideX(
-        begin: -0.2, 
-        end: 0, 
-        delay: Duration(milliseconds: 1000 + (index * 100)), 
-        duration: 500.ms,
-        curve: Curves.easeOutQuad,
-      )
       .fadeIn(
-        delay: Duration(milliseconds: 1000 + (index * 100)), 
-        duration: 400.ms,
+        delay: Duration(milliseconds: 800 + (index * 50)), 
+        duration: 300.ms,
       );
   }
   
@@ -1135,18 +1009,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ),
       ],
-    )
-    .animate(controller: _controller)
-    .slideX(
-      begin: -0.1, 
-      end: 0, 
-      delay: Duration(milliseconds: delay), 
-      duration: 500.ms,
-    )
-    .fadeIn(
-      delay: Duration(milliseconds: delay), 
-      duration: 400.ms,
-    );
+    ).animate(controller: _controller)
+      .fadeIn(delay: Duration(milliseconds: delay), duration: 300.ms);
   }
   
   Widget _buildEmptyStateMessage(String message) {
@@ -1156,11 +1020,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedLoading(
-              animationType: 'empty',
-              size: 80,
+            Icon(
+              Icons.inbox,
+              size: 48,
               color: AppColors.textSecondaryColor,
-              repeat: true,
             ),
             const SizedBox(height: 16),
             Text(
@@ -1172,6 +1035,132 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-    ).animate().fadeIn(duration: 500.ms);
+    ).animate(controller: _controller)
+      .fadeIn(duration: 300.ms);
+  }
+
+  Widget _buildDiscountCard(Discount discount, int index) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DiscountDetailScreen(
+              discount: discount,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.only(right: 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardColor,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Discount image or placeholder
+            Container(
+              height: 100,
+              width: 160,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: discount.imageUrl != null && discount.imageUrl!.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: discount.imageUrl!,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => const Center(
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.accentMagenta),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(
+                        Icons.local_offer,
+                        color: AppColors.accentMagenta,
+                        size: 40,
+                      ),
+                    ),
+                  )
+                : const Icon(
+                    Icons.local_offer,
+                    color: AppColors.accentMagenta,
+                    size: 40,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            // Discount title
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                discount.title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ).animate(controller: _controller)
+      .fadeIn(
+        delay: Duration(milliseconds: 400 + (index * 50)), 
+        duration: const Duration(milliseconds: 300),
+      );
+  }
+
+  // Debug function to directly test discounts
+  void _testDiscounts() async {
+    try {
+      final contentfulService = ContentfulService();
+      final discounts = await contentfulService.getDiscounts();
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Found ${discounts.length} total discounts')),
+      );
+      
+      // Check for featured flag
+      final featuredDiscounts = discounts.where((d) => d.featured).toList();
+      
+      if (featuredDiscounts.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No featured discounts found!', style: TextStyle(color: Colors.red))),
+        );
+      } else {
+        final titles = featuredDiscounts.map((d) => d.title).join(', ');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Featured discounts: $titles')),
+        );
+      }
+      
+      // Check for your specific discount
+      print('All discount titles:');
+      for (var d in discounts) {
+        print('${d.title} - featured: ${d.featured}, expired: ${d.isExpired}, active: ${d.active}');
+      }
+      
+    } catch (e) {
+      print('Error in test: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 } 

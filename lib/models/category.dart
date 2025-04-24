@@ -2,14 +2,14 @@ class Category {
   final String id;
   final String name;
   final String description;
-  final String icon;
+  final String? icon;
   final String? imageUrl;
 
   Category({
     required this.id,
     required this.name,
     required this.description,
-    required this.icon,
+    this.icon = '',
     this.imageUrl,
   });
 
@@ -39,7 +39,7 @@ class Category {
       id: entry['sys']['id'],
       name: fields['name'] ?? '',
       description: fields['description'] ?? '',
-      icon: fields['icon'] ?? '',
+      icon: fields['icon'],
       imageUrl: imageUrl,
     );
   }

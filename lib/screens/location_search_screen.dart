@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' hide Marker;
+import 'package:google_maps_flutter/google_maps_flutter.dart' as google_maps_flutter;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:lottie/lottie.dart';
+import 'package:lottie/lottie.dart' hide Marker;
 import 'package:provider/provider.dart';
 import '../models/store.dart';
 import '../providers/stores_provider.dart';
@@ -23,21 +23,21 @@ class LocationSearchScreen extends StatefulWidget {
 }
 
 class _LocationSearchScreenState extends State<LocationSearchScreen> with TickerProviderStateMixin {
-  final Completer<GoogleMapController> _controller = Completer();
+  final Completer<google_maps_flutter.GoogleMapController> _controller = Completer();
   final ContentfulService _contentfulService = ContentfulService();
   
   // Default map position (Dhaka)
-  static const CameraPosition _dhakaPosition = CameraPosition(
-    target: LatLng(23.8103, 90.4125),
+  static const google_maps_flutter.CameraPosition _dhakaPosition = google_maps_flutter.CameraPosition(
+    target: google_maps_flutter.LatLng(23.8103, 90.4125),
     zoom: 12,
   );
   
-  LatLng? _currentPosition;
+  google_maps_flutter.LatLng? _currentPosition;
   final TextEditingController _searchController = TextEditingController();
   
   List<Store> _allStores = [];
   List<Store> _nearbyStores = [];
-  Map<String, Marker> _markers = {};
+  Map<String, google_maps_flutter.Marker> _markers = {};
   bool _isLoading = true;
   bool _isSearching = false;
   String? _searchError;
@@ -101,77 +101,86 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
   
   // Request location permission and get current location
   Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    try {
+      if (_isLoading) return;
 
-    // Check if location services are enabled
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
       setState(() {
-        _searchError = 'Location services are disabled.';
+        _isLoading = true;
+        _searchError = null;
       });
-      return;
-    }
 
-    // Check location permission
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
+      // Check if location service is enabled
+      bool serviceEnabled;
+      LocationPermission permission;
+
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
         setState(() {
-          _searchError = 'Location permissions are denied.';
+          _isLoading = false;
+          _searchError = 'Location services are disabled. Please enable location in settings.';
         });
         return;
       }
-    }
-    
-    if (permission == LocationPermission.deniedForever) {
-      setState(() {
-        _searchError = 'Location permissions are permanently denied.';
-      });
-      return;
-    }
 
-    try {
-      // Get current position
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() {
+            _isLoading = false;
+            _searchError = 'Location permissions are denied';
+          });
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _isLoading = false;
+          _searchError = 'Location permissions are permanently denied. Please enable them in settings.';
+        });
+        return;
+      }
+
+      // When permissions are granted
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
       );
-      
-      // Reverse geocode to get address
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude,
-        position.longitude,
-      );
-      
-      String address = 'Current Location';
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
-        address = '${place.street}, ${place.locality}, ${place.country}';
-      }
-      
+
       setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-        _searchAddress = address;
+        _currentPosition = position;
       });
-      
-      // Update camera position to user location
-      _moveToLocation(_currentPosition!);
-      
-      // Update nearby stores
-      _updateNearbyStores();
-    } catch (e) {
+
+      // Get address from coordinates
+      await _getAddressFromCoordinates(position);
+
+      // Update map camera position
+      final google_maps_flutter.GoogleMapController controller = await _controller.future;
+      controller.animateCamera(google_maps_flutter.CameraUpdate.newCameraPosition(
+        google_maps_flutter.CameraPosition(
+          target: google_maps_flutter.LatLng(position.latitude, position.longitude),
+          zoom: 15.0,
+        ),
+      ));
+
       setState(() {
-        _searchError = 'Failed to get current location: $e';
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error getting current location: $e');
+      setState(() {
+        _isLoading = false;
+        _searchError = 'Could not get current location. Please try again.';
       });
     }
   }
   
   // Move map camera to specified location
-  Future<void> _moveToLocation(LatLng location) async {
-    final GoogleMapController controller = await _controller.future;
-    controller.animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(
+  Future<void> _moveToLocation(google_maps_flutter.LatLng location) async {
+    final google_maps_flutter.GoogleMapController controller = await _controller.future;
+    controller.animateCamera(google_maps_flutter.CameraUpdate.newCameraPosition(
+      google_maps_flutter.CameraPosition(
         target: location,
         zoom: 14,
       ),
@@ -192,7 +201,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
       
       if (locations.isNotEmpty) {
         final location = locations.first;
-        final newLocation = LatLng(location.latitude, location.longitude);
+        final newLocation = google_maps_flutter.LatLng(location.latitude, location.longitude);
         
         // Reverse geocode to get full address
         List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -275,13 +284,13 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
     for (int i = 0; i < sortedStores.length; i++) {
       final store = sortedStores[i];
       if (store.latitude != null && store.longitude != null) {
-        final markerId = MarkerId(store.id);
+        final markerId = google_maps_flutter.MarkerId(store.id);
         
         // Create custom marker icon based on store category or logo
-        _markers[store.id] = Marker(
+        _markers[store.id] = google_maps_flutter.Marker(
           markerId: markerId,
-          position: LatLng(store.latitude!, store.longitude!),
-          infoWindow: InfoWindow(
+          position: google_maps_flutter.LatLng(store.latitude!, store.longitude!),
+          infoWindow: google_maps_flutter.InfoWindow(
             title: store.name,
             snippet: store.description,
             onTap: () {
@@ -321,6 +330,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
 
   @override
   Widget build(BuildContext context) {
+    int index = 0; // Initialize index variable
     return Scaffold(
       body: _buildAnimatedBody(),
       floatingActionButton: _buildFloatingActionButton(),
@@ -373,14 +383,14 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
   }
   
   Widget _buildGoogleMap() {
-    return GoogleMap(
-      mapType: MapType.normal,
+    return google_maps_flutter.GoogleMap(
+      mapType: google_maps_flutter.MapType.normal,
       initialCameraPosition: _dhakaPosition,
-      markers: Set<Marker>.of(_markers.values),
+      markers: Set<google_maps_flutter.Marker>.of(_markers.values),
       myLocationEnabled: true,
       myLocationButtonEnabled: false,
       compassEnabled: true,
-      onMapCreated: (GoogleMapController controller) {
+      onMapCreated: (google_maps_flutter.GoogleMapController controller) {
         _controller.complete(controller);
       },
     ).animate().fadeIn(duration: 800.ms);
@@ -582,7 +592,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
                     itemCount: _nearbyStores.length,
                     itemBuilder: (context, index) {
                       final store = _nearbyStores[index];
-                      return _buildStoreCard(store);
+                      return _buildStoreCard(store, index);
                     },
                   ),
           ),
@@ -591,7 +601,7 @@ class _LocationSearchScreenState extends State<LocationSearchScreen> with Ticker
     );
   }
   
-  Widget _buildStoreCard(Store store) {
+  Widget _buildStoreCard(Store store, int index) {
     return GestureDetector(
       onTap: () {
         Navigator.push(

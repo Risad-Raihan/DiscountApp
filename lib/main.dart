@@ -18,8 +18,55 @@ import 'providers/stores_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Hard-coded Contentful credentials for testing
+  // You should replace these with your actual Contentful credentials
+  // and then load from .env for production
+  const String hardcodedSpaceId = 'dm9oug4ckfgv';  // Space ID from logs
+  const String hardcodedAccessToken = 'YOUR_ACCESS_TOKEN_HERE';  // Replace with your actual access token
+  
   // Load environment variables from .env file
-  await dotenv.dotenv.load(fileName: ".env");
+  try {
+    await dotenv.dotenv.load(fileName: ".env");
+    print('Environment variables loaded successfully');
+    
+    // Check if Contentful credentials are available from .env
+    var spaceId = dotenv.dotenv.env['CONTENTFUL_SPACE_ID'];
+    var accessToken = dotenv.dotenv.env['CONTENTFUL_ACCESS_TOKEN'];
+    
+    // If not available from .env, use the hardcoded ones (if provided)
+    if (spaceId == null || spaceId.isEmpty) {
+      spaceId = hardcodedSpaceId;
+      // Add to environment variables so ContentfulService can find them
+      if (spaceId.isNotEmpty) {
+        dotenv.dotenv.env['CONTENTFUL_SPACE_ID'] = spaceId;
+      }
+    }
+    
+    if (accessToken == null || accessToken.isEmpty) {
+      accessToken = hardcodedAccessToken;
+      // Add to environment variables so ContentfulService can find them
+      if (accessToken.isNotEmpty) {
+        dotenv.dotenv.env['CONTENTFUL_ACCESS_TOKEN'] = accessToken;
+      }
+    }
+    
+    print('Contentful credentials check:');
+    print('- Space ID: ${spaceId.isNotEmpty ? "Available" : "MISSING"}');
+    print('- Access Token: ${accessToken.isNotEmpty ? "Available" : "MISSING"}');
+    
+    if (spaceId.isEmpty || accessToken.isEmpty) {
+      print('WARNING: Contentful credentials are missing or invalid. The app will not display content.');
+    }
+  } catch (e) {
+    print('Failed to load environment variables: $e');
+    
+    // If .env loading failed, try to use hardcoded values as fallback
+    if (hardcodedSpaceId.isNotEmpty && hardcodedAccessToken.isNotEmpty) {
+      print('Using hardcoded Contentful credentials as fallback');
+      dotenv.dotenv.env['CONTENTFUL_SPACE_ID'] = hardcodedSpaceId;
+      dotenv.dotenv.env['CONTENTFUL_ACCESS_TOKEN'] = hardcodedAccessToken;
+    }
+  }
   
   try {
     await Firebase.initializeApp(

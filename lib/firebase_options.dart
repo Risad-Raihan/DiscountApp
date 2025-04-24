@@ -60,7 +60,7 @@ class DefaultFirebaseOptions {
     appId: '1:1076421018451:android:1db468b2c48376379497a6',
     messagingSenderId: '1076421018451',
     projectId: 'discount-hub-13c18',
-    storageBucket: 'discount-hub-13c18.firebasestorage.app',
+    storageBucket: 'discount-hub-13c18.appspot.com',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(

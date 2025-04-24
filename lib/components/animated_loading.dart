@@ -75,20 +75,22 @@ class LottieAnimation extends StatelessWidget {
               _getAnimationPath(),
               fit: fit,
               repeat: repeat,
-              delegates: LottieDelegates(
+              delegates: color != null ? LottieDelegates(
                 values: [
                   ValueDelegate.color(
-                    ['**'],
+                    const ['**'],
                     value: color,
                   ),
                 ],
-              ),
+              ) : null,
               errorBuilder: (context, error, stackTrace) {
+                print('Lottie error: $error');
                 // Fallback for animation loading errors
                 return _buildFallbackIcon();
               },
             );
           } catch (e) {
+            print('Lottie exception: $e');
             // Fallback for any other errors
             return _buildFallbackIcon();
           }

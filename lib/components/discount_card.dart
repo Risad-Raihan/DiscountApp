@@ -96,66 +96,61 @@ class DiscountCard extends StatelessWidget {
           topRight: Radius.circular(20),
         ),
       ),
-      child: Stack(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${discount.discountPercentage.toInt()}% OFF',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${discount.discountPercentage.toInt()}% OFF',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                if (discount.discountPercentage >= 50)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(
+                      Icons.local_fire_department,
+                      color: Colors.orange,
+                      size: 24,
                     ),
-                    if (discount.discountPercentage >= 50)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Lottie.asset(
-                          'assets/animations/fire.json',
-                          width: 24,
-                          height: 24,
-                          fit: BoxFit.cover,
-                        ),
+                  ),
+              ],
+            ),
+          ),
+          // Days left indicator
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                discount.isExpired
+                    ? 'Expired'
+                    : '${calculateDaysLeft(discount.expiryDate)} days left',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: discount.isExpired ? Colors.red[300] : Colors.green[300],
+                    ),
+              ),
+              // Formatted expiry date with max width constraint
+              Container(
+                constraints: const BoxConstraints(maxWidth: 110),
+                child: Text(
+                  _getFormattedDateRange(),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
                       ),
-                  ],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
-          ),
-          Positioned(
-            right: 0,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (discount.endDate != null) ...[
-                  Text(
-                    discount.isExpired
-                        ? 'Expired'
-                        : '${calculateDaysLeft(discount.endDate!)} days left',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: discount.isExpired ? Colors.red : Colors.green,
-                        ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _getFormattedDateRange(),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFF9E9E9E),
-                        ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
           ),
         ],
       ),
@@ -252,9 +247,9 @@ class DiscountCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        discount.store,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: _getDiscountCategoryColor(),
+                        'Store: ${discount.store}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondaryColor,
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 1,
@@ -274,7 +269,7 @@ class DiscountCard extends StatelessWidget {
           // Description with proper constraints
           Text(
             discount.description,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: isExpired ? Colors.grey : null,
             ),
             maxLines: 2,
@@ -294,8 +289,8 @@ class DiscountCard extends StatelessWidget {
     return IconButton(
       icon: Icon(
         discount.isFavorite ? Icons.favorite : Icons.favorite_border,
-        color: discount.isFavorite ? AppColors.accentPink : Colors.grey,
-        size: 22,
+        color: discount.isFavorite ? AppColors.primaryColor : AppColors.textSecondaryColor,
+        size: 24,
       ),
       onPressed: onFavorite,
       constraints: const BoxConstraints(),
@@ -310,8 +305,10 @@ class DiscountCard extends StatelessWidget {
     final days = discount.daysRemaining();
     
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
+          flex: 2,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -325,16 +322,22 @@ class DiscountCard extends StatelessWidget {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  discount.code ?? 'No Code',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isExpired ? Colors.grey : Colors.white,
-                    letterSpacing: 1,
-                    fontFamily: 'Poppins',
+                Flexible(
+                  child: Text(
+                    discount.code ?? 'No Code',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isExpired ? Colors.grey : Colors.white,
+                      letterSpacing: 1,
+                      fontFamily: 'Poppins',
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
+                const SizedBox(width: 4),
                 Icon(
                   Icons.copy,
                   size: 16,
@@ -347,29 +350,35 @@ class DiscountCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 12),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'Expires:',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Colors.grey,
+        Expanded(
+          flex: 1,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Expires:',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.grey,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            Text(
-              DateFormat('MMM dd, yyyy').format(discount.expiryDate),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: isExpired 
-                    ? AppColors.errorColor 
-                    : days < 3 
-                        ? AppColors.warningColor 
-                        : AppColors.textSecondaryColor,
-                fontWeight: isExpired || days < 3 
-                    ? FontWeight.bold 
-                    : FontWeight.normal,
+              Text(
+                DateFormat('MMM dd').format(discount.expiryDate),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: isExpired 
+                      ? AppColors.errorColor 
+                      : days < 3 
+                          ? AppColors.warningColor 
+                          : AppColors.textSecondaryColor,
+                  fontWeight: isExpired || days < 3 
+                      ? FontWeight.bold 
+                      : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ],
     );
@@ -405,18 +414,12 @@ class DiscountCard extends StatelessWidget {
     return difference.inDays;
   }
 
-  // Helper method to format date range with error handling
+  // Helper method to format expiry date with error handling
   String _getFormattedDateRange() {
     try {
-      final startFormatted = discount.startDate != null 
-          ? DateFormat('MMM dd').format(discount.startDate!) 
-          : 'N/A';
-      final endFormatted = discount.endDate != null 
-          ? DateFormat('MMM dd').format(discount.endDate!) 
-          : 'N/A';
-      return '$startFormatted - $endFormatted';
+      return 'Expires: ${DateFormat.yMMMd().format(discount.expiryDate)}';
     } catch (e) {
-      return 'Invalid dates';
+      return 'Invalid date';
     }
   }
 } 
